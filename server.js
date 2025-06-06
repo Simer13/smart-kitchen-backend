@@ -2,14 +2,22 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const { GoogleGenerativeAI } = require('@google/generative-ai'); // <-- NEW: Gemini SDK
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
 // --- IMPORTANT: Load API keys from Render's environment variables ---
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // <-- REMOVED
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // <-- NEW: Gemini API Key
 const SPOONACULAR_API_KEY = process.env.SPOONACULAR_API_KEY;
+
+// Initialize Google Gemini API
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// Choose the model you want to use. 'gemini-pro' is generally good for text.
+const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
 
 // --- API Endpoint to Generate Recipe ---
 app.post('/api/generate-recipe', async (req, res) => {
@@ -22,14 +30,13 @@ app.post('/api/generate-recipe', async (req, res) => {
   console.log("Received ingredients:", ingredients);
   console.log("Received filters:", filters);
 
-  let aiSuggestion = ""; // Initialize with empty string
+  let aiSuggestion = "";
   let realRecipeData = null;
 
-  // 1. Call OpenAI for AI Recipe Suggestion
+  // 1. Call Google Gemini for AI Recipe Suggestion
   try {
-    console.log("Calling OpenAI...");
+    console.log("Calling Google Gemini...");
 
-    // *** MODIFIED PROMPT FOR BETTER AI SUGGESTIONS ***
     const prompt = `Given the ingredients: ${ingredients.join(', ')}.
     ${filters.time !== 'No limit' ? `The user wants a recipe that takes ${filters.time}.` : ''}
     ${filters.mood !== 'No limit' ? `The user is in a ${filters.mood} mood.` : ''}
@@ -40,42 +47,36 @@ app.post('/api/generate-recipe', async (req, res) => {
     1. Maximizing the use of the ingredients provided.
     2. Suggesting a dish that can be made quickly, especially if time is limited.
     3. Providing a simple, practical solution for "emergency cooking" or when food is limited.
-    4. If an ingredient is missing for a classic dish, suggest a plausible substitution.
+    4. If an ingredient is missing for a classic dish, suggest a plausible substitution, but emphasize using existing ingredients first.
 
     Provide only the recipe idea name and a very brief description of what it is (e.g., "Speedy Chicken Stir-fry: A quick one-pan meal maximizing leftover chicken and veggies.").`;
 
-    const openaiResponse = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: "gpt-3.5-turbo", // You can experiment with "gpt-4o" for better quality if desired and available
-      messages: [
-        { role: "system", content: "You are a helpful culinary AI focused on practical, efficient, and creative recipe solutions using limited ingredients." },
-        { role: "user", content: prompt } // Using the refined prompt
-      ],
-      max_tokens: 200, // Increased max_tokens slightly for more detailed descriptions
-      temperature: 0.8, // Slightly higher temperature for more creativity
-    }, {
-      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}` }
-    });
-    aiSuggestion = openaiResponse.data.choices[0].message.content.trim();
-    console.log("OpenAI response received.");
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    aiSuggestion = response.text().trim(); // Get the text content from Gemini's response
+    console.log("Gemini response received.");
+
   } catch (error) {
-    console.error("Error calling OpenAI:", error.response ? error.response.data : error.message);
-    aiSuggestion = "AI recipe idea could not be generated at this time.";
+    console.error("Error calling Google Gemini:", error.message);
+    if (error.response) { // Axios error for some reason, though Gemini SDK handles network
+      console.error("Gemini response data:", error.response.data);
+    }
+    aiSuggestion = "AI recipe idea could not be generated at this time. (Gemini error)";
   }
 
-  // 2. Call Spoonacular for Real Recipe Match
+  // 2. Call Spoonacular for Real Recipe Match (This part remains the same)
   try {
     console.log("Calling Spoonacular...");
     const spoonacularIngredientsString = ingredients.join(',');
 
     const searchParams = {
       ingredients: spoonacularIngredientsString,
-      number: 1, // Still fetching only one best match for now, as frontend only displays one
-      ranking: 1, // Maximize used ingredients (important for 'less food' scenarios)
+      number: 1,
+      ranking: 1,
       ignorePantry: true,
       apiKey: SPOONACULAR_API_KEY,
     };
 
-    // Apply time filter for Spoonacular
     if (filters.time && filters.time !== "No limit") {
       let maxReadyTime;
       if (filters.time === "<10 mins") {
@@ -88,12 +89,9 @@ app.post('/api/generate-recipe', async (req, res) => {
       }
     }
 
-    // Apply diet type filter for Spoonacular
     if (filters.type === "Veg") {
       searchParams.diet = "vegetarian";
     }
-    // Spoonacular's 'type' filter (e.g., 'main course', 'dessert') is complex with findByIngredients
-    // and 'mood' is not a direct Spoonacular filter. The AI will handle these.
 
     const searchResponse = await axios.get(
       `https://api.spoonacular.com/recipes/findByIngredients`,
@@ -122,14 +120,12 @@ app.post('/api/generate-recipe', async (req, res) => {
     console.error("Error calling Spoonacular:", error.response ? error.response.data : error.message);
   }
 
-  // Send both AI suggestion and real recipe data back to the frontend
   res.json({ aiSuggestion, realRecipeData });
 });
 
 // --- Basic Health Check Route ---
 app.get('/', (req, res) => {
-  // It's fine to keep this message, but you could change it to reflect Render:
-  res.send('Smart Kitchen Assistant Backend is running!');
+  res.send('Smart Kitchen Assistant Backend is running with Gemini!');
 });
 
 // Start the server
