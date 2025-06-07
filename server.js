@@ -49,7 +49,11 @@ app.post('/api/generate-recipe', async (req, res) => {
     3. Providing a simple, practical solution for "emergency cooking" or when food is limited.
     4. If an ingredient is missing for a classic dish, suggest a plausible substitution, but emphasize using existing ingredients first.
 
-    Provide only the recipe idea name and a very brief description of what it is (e.g., "Speedy Chicken Stir-fry: A quick one-pan meal maximizing leftover chicken and veggies.").`;
+    Please provide the recipe in a structured format including:
+- **Recipe Name:** A creative and descriptive name.
+- **Brief Description:** A short overview of the dish.
+- **Ingredients:** A list of ingredients with approximate quantities.
+- **Instructions:** Step-by-step cooking instructions.`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
