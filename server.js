@@ -16,7 +16,7 @@ const SPOONACULAR_API_KEY = process.env.SPOONACULAR_API_KEY;
 // Initialize Google Gemini API
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 // Choose the model you want to use. 'gemini-pro' is generally good for text.
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
 
 // --- API Endpoint to Generate Recipe ---
